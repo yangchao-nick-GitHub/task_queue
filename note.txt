@@ -1,2 +1,15 @@
 explicit防止隐式转换
+lock_guard和uniqeue_lock的区别 (uniqeue_lock可以手动解锁)
+
+cv.wait_for(lock, std::chrono::seconds(2), [&] { return ready; });
+wait_for会先解锁lock，好让其他线程访问共享数据
+1.2s内有线程notify， 然后检查ready， ready为true，wait_for立即解除阻塞返回true， ready为false，wait_for继续阻塞
+2.2s内没有线程notify， 超时后检查ready， ready为true，wait_for立即解除阻塞返回true， ready为false，wait_for继续阻塞
+
+线程池要点：
+1. 线程安全
+2. 没有任务后释放线程时间片
+3. 任务的异常处理
+
+
 
