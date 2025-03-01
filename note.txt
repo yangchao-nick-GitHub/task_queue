@@ -6,10 +6,18 @@ wait_for会先解锁lock，好让其他线程访问共享数据
 1.2s内有线程notify， 然后检查ready， ready为true，wait_for立即解除阻塞返回true， ready为false，wait_for继续阻塞
 2.2s内没有线程notify， 超时后检查ready， ready为true，wait_for立即解除阻塞返回true， ready为false，wait_for继续阻塞
 
+std::deque：通过分段存储和双向链表，std::deque 的 pop_front 操作通常更高效，因为它减少了内存分配的频率，并且可以直接访问和修改头部元素。
+std::queue：基于 std::deque 实现时，pop_front 操作也是高效的，但 std::deque 的内部机制进一步优化了内存管理，减少了不必要的开销
+因此，在需要高效地进行头部删除操作时，使用 std::deque 是一个更好的选择
+
 线程池要点：
 1. 线程安全
 2. 没有任务后释放线程时间片
 3. 任务的异常处理
+
+优化点：
+1. 提交工作可以指定优先等级
+2. 任务量大可以扩容
 
 
 
