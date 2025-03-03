@@ -27,8 +27,7 @@ public:
     {
         std::lock_guard<std::mutex> lock(mtx_);
         if (!tq_.empty()) {
-            task = tq_.front();
-            auto task = std::move(tq_.front());
+            task = std::move(tq_.front());
             tq_.pop_front();
             return true;
         }
@@ -55,8 +54,7 @@ public:
     void submit(std::function<void()> task);
     void workMonitor();
     void addWorker();
-    void delWorker();
-    void haveTaskWaitting();
+
 private:
     uint32_t thread_num_;
     std::vector<std::thread> threads_;
@@ -90,6 +88,9 @@ ThreadPool::~ThreadPool()
 
 void ThreadPool::submit(std::function<void()> task)
 {
+    if (montior_stop_) {
+        throw std::runtime_error("Thread pool is stopping");
+    }
     std::lock_guard<std::mutex> lock(thread_mutex_);
     task_quque_.push(task);
     thread_cond_.notify_one();
@@ -100,13 +101,19 @@ void ThreadPool::workMonitor()
     while (!montior_stop_) {
         std::function<void()> task;
         std::unique_lock<std::mutex> lock(thread_mutex_);
-        // 超时一秒
         thread_cond_.wait_for(lock, std::chrono::seconds(1), [this] {
             return montior_stop_ || !task_quque_.isEmpty();
         });
 
-        if (task_quque_.tryPop(task)) {
+        if (!task_quque_.tryPop(task)) {
+            continue;
+        }
+        try {
             task();
+        } catch (const std::exception& e) {
+            std::cerr << "Thread pool error: " << e.what() << std::endl;
+        } catch (...) {
+            std::cerr << "Thread pool error: unknown exception" << std::endl;
         }
     }
 }
