@@ -12,11 +12,11 @@
 #include <atomic>
 
 template<typename T>
-class TaskQueue {
+class ComQueue {
 public:
-    TaskQueue() = default;
-    TaskQueue(const TaskQueue&) = delete;
-    TaskQueue(TaskQueue&&) = default;
+    ComQueue() = default;
+    ComQueue(const ComQueue&) = delete;
+    ComQueue(ComQueue&&) = default;
 
     void push(const T& task)
     {
@@ -52,17 +52,16 @@ private:
     std::deque<T> tq_;
 };
 
-class ThreadPool {
+class WorkQueue {
 public:
-    explicit ThreadPool(uint32_t min_thread_num = 4, uint32_t max_thread_num = 10)
+    explicit WorkQueue(uint32_t min_thread_num = 4, uint32_t max_thread_num = 10)
     {
         min_thread_num_ = std::max(1U, min_thread_num);
         max_thread_num_ = std::max(min_thread_num_, max_thread_num);
-        thread_num_.store(min_thread_num);
         init();
     }
 
-    ~ThreadPool()
+    ~WorkQueue()
     {
         is_running = false;
         thread_cond_.notify_all();
@@ -85,12 +84,9 @@ public:
     {
         while (is_running) {
             if (task_quque_.isEmpty() && thread_num_.load() > min_thread_num_) {
-                thread_num_.fetch_sub(1);
-                return;
-            }
-            if (!is_running) {
                 break;
             }
+
             std::function<void()> task;
             {
                 std::unique_lock<std::mutex> lock(thread_mutex_);
@@ -111,27 +107,32 @@ public:
                 std::cerr << "Thread pool error: unknown exception" << std::endl;
             }
         }
+        thread_num_.fetch_sub(1);
     }
 
     void init()
     {
-        for (uint32_t i = 0; i < thread_num_; i++) {
+        for (uint32_t i = 0; i < min_thread_num_; i++) {
             addWorker();
         }
     }
 
     void addWorker()
     {
-        threads_.emplace_back(&ThreadPool::workMonitor, this);
+        threads_.emplace_back(&WorkQueue::workMonitor, this);
         thread_num_.fetch_add(1);
+        history_max_thread_num_ = std::max(thread_num_.load(), history_max_thread_num_.load());
     }
 
+public:
+    std::atomic<uint32_t> thread_num_ {0};
+    std::atomic<uint32_t> history_max_thread_num_ {0};
 private:
-    std::atomic<uint32_t> thread_num_;
+    
     uint32_t min_thread_num_ {1};
     uint32_t max_thread_num_ {10};
     std::vector<std::thread> threads_;
-    TaskQueue<std::function<void()>> task_quque_;
+    ComQueue<std::function<void()>> task_quque_;
     std::mutex thread_mutex_;
     std::condition_variable thread_cond_;
     bool is_running {true};

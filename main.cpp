@@ -1,136 +1,109 @@
 #include <gtest/gtest.h>
-#include <thread>
-#include <vector>
 #include <chrono>
-
-// 引入 TaskQueue 类定义
+#include <atomic>
+#include <iostream>
 #include "task_queue.hpp"
 
-// 基本功能测试
-TEST(TaskQueueTest, BasicFunctionality) {
-    TaskQueue<int> queue;
+// 测试 ComQueue 的基本功能
+TEST(ComQueueTest, PushAndPop) {
+    ComQueue<int> queue;
+    queue.push(1);
+    queue.push(2);
+    queue.push(3);
 
-    // 测试 push 和 tryPop
-    queue.push(42);
-    int value = 0;
+    int value;
     EXPECT_TRUE(queue.tryPop(value));
-    EXPECT_EQ(value, 42);
+    EXPECT_EQ(value, 1);
+    EXPECT_TRUE(queue.tryPop(value));
+    EXPECT_EQ(value, 2);
+    EXPECT_TRUE(queue.tryPop(value));
+    EXPECT_EQ(value, 3);
+    EXPECT_FALSE(queue.tryPop(value));
+}
 
-    // 测试 isEmpty 和 size
-    EXPECT_TRUE(queue.isEmpty());
+TEST(ComQueueTest, Size) {
+    ComQueue<int> queue;
     EXPECT_EQ(queue.size(), 0);
-
-    queue.push(10);
-    queue.push(20);
-    EXPECT_FALSE(queue.isEmpty());
+    queue.push(1);
+    EXPECT_EQ(queue.size(), 1);
+    queue.push(2);
     EXPECT_EQ(queue.size(), 2);
-
-    // 测试多次 pop
-    EXPECT_TRUE(queue.tryPop(value));
-    EXPECT_EQ(value, 10);
-    EXPECT_TRUE(queue.tryPop(value));
-    EXPECT_EQ(value, 20);
-    EXPECT_FALSE(queue.tryPop(value)); // 队列为空时应返回 false
+    queue.push(3);
+    EXPECT_EQ(queue.size(), 3);
+    int value;
+    queue.tryPop(value);
+    EXPECT_EQ(queue.size(), 2);
 }
 
-// 多线程功能测试
-TEST(TaskQueueTest, MultithreadedFunctionality) {
-    TaskQueue<int> queue;
-    const int num_threads = 10;
-    const int num_tasks_per_thread = 1000;
-    std::vector<std::thread> threads;
+TEST(ComQueueTest, IsEmpty) {
+    ComQueue<int> queue;
+    EXPECT_TRUE(queue.isEmpty());
+    queue.push(1);
+    EXPECT_FALSE(queue.isEmpty());
+    int value;
+    queue.tryPop(value);
+    EXPECT_TRUE(queue.isEmpty());
+}
 
-    // 启动多个线程向队列中添加任务
-    for (int i = 0; i < num_threads; ++i) {
-        threads.emplace_back([&queue, i, num_tasks_per_thread]() {
-            for (int j = 0; j < num_tasks_per_thread; ++j) {
-                queue.push(i * num_tasks_per_thread + j);
-            }
+// 测试 WorkQueue 的基本功能
+TEST(WorkQueueTest, SubmitAndExecute) {
+    WorkQueue workQueue;
+    std::atomic<int> counter(0);
+
+    for (int i = 0; i < 10; ++i) {
+        workQueue.submit([&counter]() {
+            counter.fetch_add(1);
         });
     }
 
-    // 等待所有线程完成
-    for (auto& thread : threads) {
-        if (thread.joinable()) {
-            thread.join();
-        }
-    }
-
-    // 验证队列中的任务数量
-    EXPECT_EQ(queue.size(), num_threads * num_tasks_per_thread);
-
-    // 验证队列中的任务内容
-    int count = 0;
-    while (!queue.isEmpty()) {
-        int value = 0;
-        EXPECT_TRUE(queue.tryPop(value));
-        ++count;
-    }
-    EXPECT_EQ(count, num_threads * num_tasks_per_thread);
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // 等待任务完成
+    EXPECT_EQ(counter.load(), 10);
 }
 
-// 性能测试
-TEST(TaskQueueTest, PerformanceTest) {
-    TaskQueue<int> queue;
-    const int num_threads = 10;
-    const int num_tasks_per_thread = 100000;
-    std::vector<std::thread> producer_threads;
-    std::vector<std::thread> consumer_threads;
-    std::atomic<int> consumed_count{0};
+TEST(WorkQueueTest, ThreadAdjustment) {
+    WorkQueue workQueue(4, 10);
+    std::atomic<int> counter(0);
 
-    auto start_time = std::chrono::high_resolution_clock::now();
-
-    // 生产者线程：向队列中添加任务
-    for (int i = 0; i < num_threads; ++i) {
-        producer_threads.emplace_back([&queue, num_tasks_per_thread]() {
-            for (int j = 0; j < num_tasks_per_thread; ++j) {
-                queue.push(j);
-            }
+    for (int i = 0; i < 1000; ++i) {
+        workQueue.submit([&counter]() {
+            counter.fetch_add(1);
         });
     }
 
-    // 消费者线程：从队列中取出任务
-    for (int i = 0; i < num_threads; ++i) {
-        consumer_threads.emplace_back([&queue, &consumed_count]() {
-            int value = 0;
-            while (true) {
-                if (queue.tryPop(value)) {
-                    ++consumed_count;
-                } else if (queue.isEmpty()) {
-                    break;
-                }
-            }
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // 等待任务完成
+    std::cout << "WorkQueueTest cur thread_num: " << workQueue.thread_num_.load() << std::endl;
+    std::cout << "WorkQueueTest max thread_num: " << workQueue.history_max_thread_num_.load() << std::endl;
+    std::cout << "WorkQueueTest counter: " << counter.load() << std::endl;
+    EXPECT_EQ(counter.load(), 1000);
+    EXPECT_LE(workQueue.thread_num_.load(), 5);
+    EXPECT_GE(workQueue.thread_num_.load(), 1);
+}
+
+// 测试 WorkQueue 的性能
+TEST(WorkQueueTest, Performance) {
+    WorkQueue workQueue(4, 10);
+    std::atomic<int> counter(0);
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    for (int i = 0; i < 1000; ++i) {
+        workQueue.submit([&counter]() {
+            counter.fetch_add(1);
         });
     }
 
-    // 等待生产者线程完成
-    for (auto& thread : producer_threads) {
-        if (thread.joinable()) {
-            thread.join();
-        }
-    }
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // 等待任务完成
+    EXPECT_EQ(counter.load(), 1000);
 
-    // 等待消费者线程完成
-    for (auto& thread : consumer_threads) {
-        if (thread.joinable()) {
-            thread.join();
-        }
-    }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
 
-    auto end_time = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-
-    // 验证消费的任务数量
-    EXPECT_EQ(consumed_count.load(), num_threads * num_tasks_per_thread);
-
-    // 输出性能指标
-    std::cout << "Processed " << consumed_count.load() << " tasks in " << duration << " ms." << std::endl;
+    std::cout << "Time taken to process 1000 tasks: " << duration << " ms" << std::endl;
+    std::cout << "cur thread num: " << workQueue.thread_num_.load() << std::endl;
+    std::cout << "max thread num: " << workQueue.history_max_thread_num_.load() << std::endl;
 }
 
-int main(int argc, char** argv) {
-    // 初始化 Google Test 框架
+int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
-
-    // 运行所有测试用例
     return RUN_ALL_TESTS();
 }
