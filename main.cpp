@@ -4,7 +4,7 @@
 #include <chrono>
 
 // 引入 TaskQueue 类定义
-#include "main.cpp"
+#include "task_queue.hpp"
 
 // 基本功能测试
 TEST(TaskQueueTest, BasicFunctionality) {
@@ -125,4 +125,12 @@ TEST(TaskQueueTest, PerformanceTest) {
 
     // 输出性能指标
     std::cout << "Processed " << consumed_count.load() << " tasks in " << duration << " ms." << std::endl;
+}
+
+int main(int argc, char** argv) {
+    // 初始化 Google Test 框架
+    ::testing::InitGoogleTest(&argc, argv);
+
+    // 运行所有测试用例
+    return RUN_ALL_TESTS();
 }
